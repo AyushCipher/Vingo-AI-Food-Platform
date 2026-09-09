@@ -22,6 +22,7 @@ export const validateEnv = () => {
     "RAZORPAY_KEY_SECRET",
     "GEMINI_API_KEY",
     "FIREBASE_SERVICE_ACCOUNT_KEY",
+    "REDIS_URL",
   ];
   const missingOptional = optionalButRecommended.filter((key) => !process.env[key]);
   if (missingOptional.length > 0) {

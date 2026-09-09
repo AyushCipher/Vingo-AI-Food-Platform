@@ -23,6 +23,9 @@ import validateEnv from "./config/validateEnv.js"
 import logger from "./config/logger.js"
 import errorHandler, { notFoundHandler } from "./middlewares/errorHandler.js"
 
+import { createAdapter } from "@socket.io/redis-adapter"
+import { createRedisPubSubClients } from "./config/redis.js"
+
 validateEnv()
 
 const port = process.env.PORT || 5000
@@ -48,6 +51,12 @@ const io = new Server(server,{
     credentials: true  
   }
 })
+
+const redisPubSub = createRedisPubSubClients();
+if (redisPubSub) {
+  io.adapter(createAdapter(redisPubSub.pubClient, redisPubSub.subClient));
+  logger.info("✅ Socket.io Redis adapter configured for multi-instance scaling");
+}
 
 app.set("io", io);
 

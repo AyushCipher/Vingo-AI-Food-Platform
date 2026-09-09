@@ -65,6 +65,14 @@ const itemSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    embedding: {
+      type: [Number],
+      default: undefined,
+    },
+    vectorIndexedAt: {
+      type: Date,
+      default: null,
+    },
   },
 
   { timestamps: true }

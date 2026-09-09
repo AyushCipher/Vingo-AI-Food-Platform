@@ -4,170 +4,212 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![Redis](https://img.shields.io/badge/Redis-ioredis-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![Socket.io](https://img.shields.io/badge/Realtime-Socket.io-010101?logo=socketdotio&logoColor=white)](https://socket.io/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%20Flash%20%2B%20Embeddings-8E75B2?logo=google&logoColor=white)](https://ai.google.dev/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
-> A full-stack, role-aware food delivery platform with real-time order tracking, short-form food reels, shop management, and a DB-grounded AI assistant.
+> A high-performance, full-stack, role-aware food delivery platform featuring real-time order tracking, short-form food reels, Redis caching & horizontal socket scaling, MongoDB ACID transactions, and a Gemini-powered Vector RAG Assistant with token streaming.
 
-## Overview
+---
 
-Vingo is a production-style food delivery and social commerce platform built for three distinct roles: customers, restaurant owners, and delivery partners. It combines restaurant discovery, cart and checkout flows, delivery tracking, review management, and reel-based content discovery into one app.
+## 🌟 Overview
 
-The standout feature is the in-app assistant. A rule-based knowledge base handles common, predictable questions deterministically; anything else goes to a Gemini-powered agent with function-calling access to real MongoDB data — it can compare prices across shops, search the menu by budget/diet, and check the signed-in user's own order status/history, grounding its answers in live data instead of guessing.
+Vingo is an enterprise-grade food delivery and social commerce platform architected for three distinct personas: **Customers**, **Restaurant Owners**, and **Delivery Partners**. It unifies restaurant discovery, dynamic cart & checkout with Razorpay, live GPS delivery routing, menu analytics, video reel engagement, and a live-grounded conversational AI assistant.
 
-## Key Features
+---
 
-- Role-based experiences for `user`, `owner`, and `deliveryBoy`
-- City-aware restaurant and item discovery
-- Search by item name, category, and location
-- Persistent cart with quantity management and localStorage sync
-- Checkout with Razorpay online payment support and COD flow
-- Order lifecycle management for customer, owner, and delivery partner
-- OTP-based delivery verification
-- Real-time updates through Socket.io
-- Live delivery location tracking on map-based screens
-- Food reels with upload, like, comment, reply, save, and edit flows
-- Reviews for menu items
-- Password reset with email OTP
-- Hybrid chatbot: rule-based FAQ layer plus a tool-calling Gemini agent that queries the database directly for price comparisons, menu search, and the user's own order status/history
-- Media uploads through Cloudinary
-- MongoDB-backed persistence for users, shops, orders, reels, and chat sessions
-- Installable as a PWA (offline app shell, home-screen install)
+## 🚀 Key Technical Highlights
 
-## Project Architecture
+- **⚡ Distributed Caching & Scaling (Redis):** High-frequency queries (city shop catalogs, menu listings) cached with automatic invalidation on mutations, plus `@socket.io/redis-adapter` for multi-instance socket clustering.
+- **🔒 MongoDB ACID Transactions:** Atomic multi-document mutations for order checkout and payment verification using `mongoose.startSession()`.
+- **🧠 Vector Embeddings & Semantic Search (RAG):** Natural language dish search powered by Google Gemini `text-embedding-004` (768-dimensional vectors) and Cosine Similarity ranking (`"something spicy, crunchy, and comfort food under ₹250"`).
+- **🌊 Real-Time Token Streaming (SSE):** Instant time-to-first-token typewriter UI for the in-app AI assistant with live tool execution status updates (`POST /api/chat/stream`).
+- **📍 Real-Time GPS Tracking:** Live delivery partner coordinates broadcasted via Socket.io directly to interactive Leaflet map interfaces.
+- **📱 Social Food Reels:** Video feeds with likes, threaded comments, bookmarking, and Cloudinary media optimization.
+- **🛡️ Defensive Security:** Tiered rate-limiting, Helmet security headers, HTTP-only JWT cookies, server-verified Firebase Google Sign-In, and strict IDOR/auth-scoping.
+- **📦 Progressive Web App (PWA):** Offline shell caching and home-screen installability.
 
-The project is split into a React frontend and an Express/MongoDB backend. The backend exposes REST APIs for auth, shops, items, orders, reviews, reels, users, and chat. Socket.io is used for real-time order and delivery events.
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
-flowchart LR
-  U[Customer / Owner / Delivery Partner] --> F[React + Vite Frontend]
-  F -->|REST| B[Express API]
-  F <-->|Socket.io| S[Realtime Server]
-  B --> M[(MongoDB)]
-  B --> C[Cloudinary]
-  B --> E[Email SMTP]
-  B --> R[Razorpay]
-  B --> G[Gemini API]
-  S --> M
+flowchart TB
+  subgraph Client["Client Tier (React 19 + Tailwind CSS + PWA)"]
+    U[Customer / Owner / Courier]
+    CW[Streaming AI Assistant Widget]
+    MAP[Leaflet Live Map Tracking]
+  end
+
+  subgraph API["Backend Tier (Node.js + Express 5)"]
+    direction TB
+    MW[Helmet / Rate Limiter / Auth Middleware]
+    CTRL[Controllers & Business Logic]
+    TX[ACID Transaction Runner]
+    AGENT[Multi-Turn Function Calling Agent]
+    EMB[Semantic Search Vector Service]
+  end
+
+  subgraph Realtime["Realtime Scaling Tier"]
+    SIO[Socket.io Cluster]
+    RADAPT[Redis Pub/Sub Adapter]
+  end
+
+  subgraph CacheDB["Data & Caching Tier"]
+    MDB[(MongoDB Primary)]
+    RCACHE[(Redis Distributed Cache)]
+  end
+
+  subgraph External["External Cloud Integrations"]
+    GEMINI[Google Gemini API Flash + text-embedding-004]
+    RAZOR[Razorpay Gateway]
+    CLD[Cloudinary CDN]
+    SMTP[Nodemailer SMTP]
+  end
+
+  U -->|REST / SSE Streaming| MW
+  CW -->|SSE Token Stream| CTRL
+  MW --> CTRL
+  CTRL --> TX
+  TX --> MDB
+  CTRL <-->|Query Cache / Invalidation| RCACHE
+  CTRL --> AGENT
+  AGENT -->|Tool Queries| MDB
+  AGENT <--> GEMINI
+  EMB <--> GEMINI
+  EMB --> MDB
+
+  U <-->|WebSocket| SIO
+  SIO <--> RADAPT <--> RCACHE
+  CTRL -->|Emit Live Events| SIO
+
+  CTRL --> RAZOR
+  CTRL --> CLD
+  CTRL --> SMTP
 ```
 
-### System Design / Workflow
+---
+
+## 🔄 Agentic Vector RAG & Token Streaming Workflow
 
 ```mermaid
 sequenceDiagram
-  participant User as Customer
-  participant UI as React App
-  participant API as Express API
+  participant User as Customer (UI)
+  participant API as Express API (/api/chat/stream)
+  participant KB as Rule Knowledge Base
+  participant Agent as Gemini Flash Agent
+  participant Vector as Embedding Service (text-embedding-004)
   participant DB as MongoDB
-  participant RT as Socket.io
-  participant G as Gemini
 
-  User->>UI: Search food / browse shops / add to cart
-  UI->>API: Fetch shops, items, reels, user profile
-  API->>DB: Read data
-  DB-->>API: Return results
-  API-->>UI: Render catalog and cart state
-  User->>UI: Place order
-  UI->>API: Submit order + address + payment method
-  API->>DB: Create order and shop order records
-  API-->>RT: Emit order update events
-  RT-->>UI: Live order status / delivery updates
-  User->>UI: Ask chatbot a question
-  UI->>API: Send message with session context
-  API->>DB: Store conversation history
-  alt No rule match
-    API->>G: Send message + tool declarations
-    G-->>API: Requests a tool call (e.g. compareItemPrices)
-    API->>DB: Run the tool's query, scoped to the caller
-    DB-->>API: Real shop/item/order data
-    API->>G: Send tool result back
-    G-->>API: Final grounded answer
+  User->>API: Sends prompt: "Find something spicy, crunchy, and comfort food under 250"
+  API->>KB: Check instant FAQ matches
+  alt Rule FAQ Matched
+    KB-->>API: FAQ Match found
+    API-->>User: Stream FAQ tokens via SSE
+  else Agent & Vector Search
+    API->>Agent: Pass conversation history + Tool Declarations
+    Agent-->>API: Decides to call `searchMenuItems(query, city, maxPrice)`
+    API-->>User: SSE Event `{"type": "tool_start", "message": "🔍 Searching menu items..."}`
+    API->>Vector: Generate query embedding (768-dim vector)
+    Vector->>DB: Fetch city candidate items
+    Vector-->>API: Rank candidate dishes by Cosine Similarity
+    API->>Agent: Return grounded ranked menu results
+    Agent-->>API: Final synthesis & recommendation
+    API-->>User: Stream token by token (Typewriter UX)
+    API->>DB: Persist full message to session history
   end
-  API-->>UI: Rule-based or agent response
 ```
-## Tech Stack
+
+---
+
+## 🛠️ Tech Stack
 
 | Layer | Technologies |
 |---|---|
-| Frontend | React 19, Vite, React Router, Redux Toolkit, Tailwind CSS 4, Axios, React Toastify, React Icons, Recharts, Leaflet |
-| Backend | Node.js, Express 5, Mongoose, Socket.io, Multer, CORS, Cookie Parser, Helmet, express-rate-limit, Zod, Pino |
-| Database | MongoDB |
-| Auth | JWT, HTTP-only cookies, Firebase Admin SDK (server-verified Google Sign-In) |
-| Payments | Razorpay |
-| Media Storage | Cloudinary |
-| Email | Nodemailer SMTP |
-| AI / Chat | Gemini function-calling agent with DB-backed tools, plus a rule-based knowledge base |
-| Testing / CI | Vitest, Supertest, ESLint, GitHub Actions |
+| **Frontend** | React 19, Vite 7, React Router 7, Redux Toolkit, Tailwind CSS 4, Axios, Leaflet / React-Leaflet, Recharts, React Toastify, React Icons, PWA |
+| **Backend** | Node.js, Express 5, Mongoose 8, Socket.io 4, `@socket.io/redis-adapter`, `ioredis`, Multer, CORS, Cookie-Parser, Helmet, express-rate-limit, Zod, Pino |
+| **Caching & Realtime** | Redis (ioredis), Socket.io Redis Pub/Sub cluster adapter |
+| **Database** | MongoDB (ACID Transactions via `mongoose.startSession()`, TTL Indexes) |
+| **AI / GenAI** | Gemini Flash (Multi-turn tool calling), Gemini `text-embedding-004` (Vector search), Server-Sent Events (SSE) token streaming |
+| **Auth** | JWT in HTTP-only cookies, Firebase Admin SDK (server-verified Google tokens) |
+| **Payments** | Razorpay (tamper-proof verification & replay protection) |
+| **Media Storage** | Cloudinary |
+| **Testing & CI** | Vitest (48+ unit tests), Supertest, ESLint, GitHub Actions |
 
-## AI / LLM Technologies Used
+---
 
-- Gemini (flash-tier, tracked via the `-latest` alias) with **function calling** — the model can call real backend tools instead of only generating free text
-- DB-grounded tools (`backend/services/chatTools.js`), each backed by a live Mongoose query:
-  - `compareItemPrices` — price-compare a dish across shops in a city
-  - `searchMenuItems` — search the menu by name/category/budget/diet
-  - `getShopsInCity` — list restaurants in a city
-  - `getOrderStatus` / `getOrderHistory` — the signed-in user's own orders only, scoped server-side to the verified session (never a model- or client-supplied ID)
-- Rule-based FAQ layer for deterministic answers to common delivery, payment, refund, login, and app-help questions, tried before the agent
-- Session-based conversation history stored in MongoDB
-- Context awareness from user role and current page
-- Support session cleanup through TTL index for privacy-focused retention
+## 🧪 Testing & Verification
 
-## Folder Structure
+The test suite covers critical security, transactions, caching, vector similarity, and real-time streaming:
 
-```text
-.
-├── render.yaml
-├── backend
-│   ├── index.js
-│   ├── socket.js
-│   ├── config
-│   ├── controllers
-│   ├── middlewares
-│   ├── models
-│   └── routes
-└── frontend
-    ├── src
-    │   ├── components
-    │   ├── hooks
-    │   ├── pages
-    │   ├── redux
-    │   └── socket.js
-    ├── utils
-    ├── vite.config.js
-    └── eslint.config.js
+```bash
+cd backend
+npm test
 ```
 
-## Installation Guide
+```text
+ ✓ tests/auth.validators.test.js (8 tests)
+ ✓ tests/isAuth.test.js (4 tests)
+ ✓ tests/order.verifyRazorpay.test.js (10 tests)
+ ✓ tests/chat.ownership.test.js (6 tests)
+ ✓ tests/chatTools.test.js (6 tests)
+ ✓ tests/redis.test.js (4 tests)
+ ✓ tests/transaction.test.js (2 tests)
+ ✓ tests/semanticSearch.test.js (5 tests)
+ ✓ tests/chatStream.test.js (2 tests)
 
-### Prerequisites
+ Test Files  9 passed (9)
+      Tests  48 passed (48)
+```
 
-- Node.js 18 or newer
-- MongoDB connection string
-- Cloudinary account
-- Razorpay account
-- SMTP email credentials
-- Gemini API key for chatbot fallback
+---
 
-### Backend Setup
+## ⚙️ Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Required | Purpose |
+|---|:---:|---|
+| `PORT` | No | Backend port (default `5000`) |
+| `NODE_ENV` | No | `development` or `production` |
+| `MONGO_URI` | **Yes** | MongoDB connection string |
+| `JWT_SECRET` | **Yes** | JWT signing secret |
+| `FRONTEND_URL` | No | Allowed frontend origin |
+| `REDIS_URL` | No | Redis connection URI for caching and socket clustering (`redis://localhost:6379`) |
+| `GEMINI_API_KEY` | **Yes** | Google Gemini API key for AI assistant and `text-embedding-004` |
+| `CLOUDINARY_CLOUD_NAME` | **Yes** | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | **Yes** | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | **Yes** | Cloudinary API secret |
+| `EMAIL_USER` | **Yes** | SMTP sender email |
+| `EMAIL_PASS` | **Yes** | SMTP app password |
+| `RAZORPAY_KEY_ID` | **Yes** | Razorpay public key |
+| `RAZORPAY_KEY_SECRET` | **Yes** | Razorpay secret key |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | No | JSON service account key for Google Sign-In verification |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Purpose |
+|---|---|
+| `VITE_SERVER_URL` | Base API server URL |
+| `VITE_API_URL` | Streaming Chat API base URL |
+| `VITE_GEOAPIKEY` | Geoapify map & address geocoding key |
+| `VITE_RAZORPAY_KEY_ID` | Razorpay public checkout key |
+| `VITE_FIREBASE_APIKEY` | Firebase Client API key |
+
+---
+
+## 🚀 Quickstart Guide
+
+### 1. Backend Setup
 
 ```bash
 cd backend
 npm install
-```
-
-Create a `.env` file in `backend/` with the required variables listed below, then start the server:
-
-```bash
 npm run dev
 ```
 
-Run the backend test suite (Vitest — auth, payment verification, chat ownership/auth-scoping, and the chat agent's tools):
-
-```bash
-npm test
-```
-
-### Frontend Setup
+### 2. Frontend Setup
 
 ```bash
 cd frontend
@@ -175,186 +217,27 @@ npm install
 npm run dev
 ```
 
-## Environment Variables
+---
 
-### Backend
+## 📡 Key API Endpoints
 
-| Variable | Purpose |
-|---|---|
-| `PORT` | Backend port, defaults to `5000` |
-| `NODE_ENV` | Controls production cookie and proxy behavior |
-| `MONGO_URI` | MongoDB connection string |
-| `JWT_SECRET` | JWT signing secret |
-| `FRONTEND_URL` | Allowed frontend origin in production |
-| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name |
-| `CLOUDINARY_API_KEY` | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
-| `EMAIL_USER` | SMTP sender email |
-| `EMAIL_PASS` | SMTP app password |
-| `RAZORPAY_KEY_ID` | Razorpay public key |
-| `RAZORPAY_KEY_SECRET` | Razorpay secret key |
-| `GEMINI_API_KEY` | Gemini API key for chatbot fallback |
-| `FIREBASE_SERVICE_ACCOUNT_KEY` | Full JSON of a Firebase service account key, used to verify Google Sign-In ID tokens server-side (Firebase Console → Project Settings → Service Accounts → Generate new private key) |
+### AI Assistant & Semantic Search
+- `POST /api/chat/stream` — **SSE Real-Time Streaming Assistant** with tool events and token-by-token generation.
+- `POST /api/chat/message` — Standard JSON agent response fallback.
+- `GET /api/item/search/semantic?query=&city=&maxPrice=&type=` — **Vector Semantic Search (RAG)** using 768-dim embeddings.
 
-### Frontend
+### Core Orders & Payments
+- `POST /api/order/placeorder` — Atomic order placement (MongoDB ACID transaction).
+- `POST /api/order/verify-razorpay` — Cryptographic signature & amount verification with double-spend guards.
+- `POST /api/order/send-otp` / `POST /api/order/verify-otp` — Secure OTP delivery confirmation.
 
-| Variable | Purpose |
-|---|---|
-| `VITE_SERVER_URL` | Frontend API base URL used by deployment tooling |
-| `VITE_API_URL` | Chat widget API base URL fallback |
-| `VITE_GEOAPIKEY` | Location/geocoding integration key |
-| `VITE_RAZORPAY_KEY_ID` | Razorpay key exposed to checkout UI |
-| `VITE_FIREBASE_APIKEY` | Firebase auth API key |
+### Realtime & Shops
+- `GET /api/shop/getshopsbycity/:city` — Redis-cached restaurant discovery.
+- `GET /api/item/getitemsbycity/:city` — Redis-cached dish catalog.
+- `POST /api/reel/upload` — Short-form video upload with Cloudinary processing.
 
-## Running the Project
+---
 
-### Development
+## 📜 License
 
-1. Start the backend from `backend/`.
-2. Start the frontend from `frontend/`.
-3. Open the frontend in the browser and sign in as a customer, owner, or delivery partner.
-
-### Production Notes
-
-- The backend is configured for Render-style deployment via `render.yaml`.
-- CORS is restricted to the local Vite origin and the deployed frontend domain.
-- Cookies are configured as secure and `sameSite: none` in production.
-
-## API Endpoints
-
-### Auth
-
-- `POST /api/auth/signup`
-- `POST /api/auth/signin`
-- `GET /api/auth/signout`
-- `POST /api/auth/googleauth`
-- `POST /api/auth/sendotp`
-- `POST /api/auth/verifyotp`
-- `POST /api/auth/resetpassword`
-
-### Users
-
-- `GET /api/user/current`
-- `POST /api/user/update-location`
-- `GET /api/user/search-items`
-
-### Shops
-
-- `GET /api/shop/getall` — supports optional `?limit=&skip=`
-- `GET /api/shop/getcurrent`
-- `POST /api/shop/editshop`
-- `GET /api/shop/getshopsbycity/:city` — supports optional `?limit=&skip=`
-- `GET /api/shop/getshopbyid/:shopId`
-
-### Items
-
-- `GET /api/item/getitemsbyshop/:shopId`
-- `GET /api/item/getitemsbycity/:city` — supports optional `?limit=&skip=`
-- `POST /api/item/additem`
-- `POST /api/item/edititem/:itemId`
-- `DELETE /api/item/delete/:itemId`
-- `GET /api/item/getbyid/:itemId`
-
-### Orders
-
-- `POST /api/order/placeorder`
-- `POST /api/order/verify-razorpay`
-- `GET /api/order/getmy`
-- `GET /api/order/shop-orders`
-- `POST /api/order/update-order-status/:orderId/:shopId`
-- `GET /api/order/getassignments`
-- `POST /api/order/accept-assignment/:assignmentId`
-- `GET /api/order/current-order`
-- `POST /api/order/update-location`
-- `GET /api/order/delivery-location/:orderId/:shopOrderId`
-- `POST /api/order/send-otp`
-- `POST /api/order/verify-otp`
-- `GET /api/order/stats/today`
-- `GET /api/order/stats/month`
-- `GET /api/order/my-delivered-orders`
-- `GET /api/order/payment/daily`
-- `GET /api/order/payment/weekly`
-- `GET /api/order/payment/monthly`
-- `GET /api/order/my-location`
-- `GET /api/order/:orderId`
-
-### Reviews
-
-- `GET /api/review/item/:itemId`
-- `GET /api/review/can-review/:itemId`
-- `POST /api/review/add/:itemId`
-- `PUT /api/review/update/:reviewId`
-- `DELETE /api/review/delete/:reviewId`
-
-### Reels
-
-- `POST /api/reel/upload`
-- `GET /api/reel/getAll` — supports optional `?limit=&skip=`
-- `GET /api/reel/shop/:shopId`
-- `POST /api/reel/like/:reelId`
-- `POST /api/reel/comment/:reelId`
-- `POST /api/reel/reply/:reelId/:commentId`
-- `PUT /api/reel/edit/:reelId`
-- `DELETE /api/reel/delete/:reelId`
-- `POST /api/reel/save/:reelId`
-- `GET /api/reel/saved`
-
-### Chat
-
-- `POST /api/chat/message`
-- `GET /api/chat/history/:sessionId`
-- `DELETE /api/chat/history/:sessionId`
-- `GET /api/chat/sessions`
-
-## Screenshots
-
-### Home Screen
-
-_Screenshot of the customer home feed._
-
-### Food Reels
-
-_Screenshot of the vertical reels feed._
-
-### Owner Dashboard
-
-_Screenshot of the owner order-management view._
-
-### Chat Support
-
-_Screenshot of the chatbot UI._
-
-## Challenges Solved
-
-- Designed one codebase to serve three product roles with different UI states and permissions
-- Implemented real-time order updates and live delivery tracking through Socket.io
-- Coordinated multiple order outcomes, including COD and Razorpay flows
-- Added a hybrid chatbot that can answer common support questions deterministically and escalate to Gemini when needed
-- Managed media-heavy workflows for reels using Cloudinary upload and server-side trimming
-- Preserved cart state locally while keeping server-side order creation consistent
-
-## Learning Outcomes
-
-- Building role-based product flows with shared backend entities
-- Managing real-time systems alongside standard REST APIs
-- Designing a practical chatbot that combines rules with LLM fallback
-- Handling authenticated media uploads and OTP verification flows
-- Structuring a full-stack app for production-style deployment
-
-## Why This Project Stands Out
-
-- It is not just a food delivery clone; it adds social content, support automation, and real-time logistics
-- It supports three operational roles instead of a single consumer flow
-- It demonstrates end-to-end engineering across frontend, backend, database, realtime, payments, email, and AI
-- It includes features recruiters care about: auth, payments, uploads, sockets, tracking, and conversational support
-
-## Future Improvements
-
-- Add in-app push notifications for order status changes
-- Replace the keyword-matched FAQ layer with embedding-based retrieval (e.g. MongoDB Atlas Vector Search) so more phrasings match without hand-maintained keyword lists
-- Expand automated test coverage to checkout/payment UI flows and reel upload (auth, payment verification, chat ownership, and the chat agent's tools are covered; broader route-level integration tests are not yet)
-- Introduce analytics dashboards for conversion, retention, and delivery SLA metrics
-- Add admin moderation tools for reported reels and reviews
-- Extend Zod input validation and stricter rate limits to the remaining public endpoints beyond auth and chat
-- Full TypeScript migration (deliberately out of scope for the current pass — high blast radius across the whole codebase, better done as its own dedicated effort)
-
+This project is licensed under the [ISC License](LICENSE).

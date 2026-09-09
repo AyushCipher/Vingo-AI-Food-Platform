@@ -1,14 +1,22 @@
 import uploadOnCloudinary from "../config/cloudinary.js";
 import Shop from "../models/shop.model.js";
 import { parsePagination, applyPagination } from "../utils/pagination.js";
+import { getCache, setCache, invalidatePattern } from "../config/redis.js";
 
 
 export const getAllShops = async (req, res) => {
   try {
     const pagination = parsePagination(req.query);
+    const cacheKey = `shops:all:p${pagination?.page || 1}:l${pagination?.limit || 20}`;
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
     const shops = await applyPagination(Shop.find({}).populate("owner"), pagination);
 
     if (shops.length > 0) {
+      await setCache(cacheKey, shops, 180);
       return res.status(200).json(shops);
     }
 
@@ -67,6 +75,10 @@ export const addShop = async (req, res) => {
       options: { sort: { createdAt: -1 } },
     });
 
+    // Invalidate shop and item query caches
+    await invalidatePattern("shops:*");
+    await invalidatePattern("items:*");
+
     return res.status(200).json(shop);
 
   } catch (error) {
@@ -106,8 +118,15 @@ export const getShopsByCity = async (req, res) => {
       return res.status(400).json({ message: "City parameter is required" });
     }
 
-    // Case-insensitive search
     const pagination = parsePagination(req.query);
+    const normalizedCity = city.toLowerCase().trim();
+    const cacheKey = `shops:city:${normalizedCity}:p${pagination?.page || 1}:l${pagination?.limit || 20}`;
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    // Case-insensitive search
     const shops = await applyPagination(
       Shop.find({
         city: { $regex: new RegExp(`^${city}$`, "i") },
@@ -115,6 +134,7 @@ export const getShopsByCity = async (req, res) => {
       pagination
     );
 
+    await setCache(cacheKey, shops, 180);
     return res.status(200).json(shops);
   } catch (error) {
     console.error("Get shop by city error", error);
@@ -126,12 +146,19 @@ export const getShopsByCity = async (req, res) => {
 export const getShopById = async (req, res) => {
   try {
     const { shopId } = req.params;
+    const cacheKey = `shops:id:${shopId}`;
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
     const shop = await Shop.findById(shopId);
     
     if (!shop) {
       return res.status(400).json({ message: "shop not found" });
     }
     
+    await setCache(cacheKey, shop, 300);
     return res.status(200).json(shop);
   } catch (error) {
     console.error("Get shop by id error", error);

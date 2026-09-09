@@ -6,6 +6,7 @@ import Order from "../models/order.model.js";
 import Shop from "../models/shop.model.js";
 import User from "../models/user.model.js";
 import Razorpay from "razorpay"
+import { runWithTransaction } from "../utils/transaction.js";
 
 // Built lazily (not at module load): this file is imported before index.js's
 // dotenv.config() runs, so process.env.RAZORPAY_KEY_ID would be undefined at
@@ -83,6 +84,8 @@ export const placeOrder = async (req, res) => {
 
     console.log(" Total Amount to charge:", totalAmount);
 
+    let newOrder;
+
     // Online Payment (Razorpay)
     if (paymentMethod === "online") {
       const razorOrder = await getRazorpayInstance().orders.create({
@@ -91,15 +94,21 @@ export const placeOrder = async (req, res) => {
         receipt: `receipt_${Date.now()}`,
       });
 
-      let newOrder = await Order.create({
-        user: req.userId,
-        address,
-        paymentMethod,
-        totalAmount,
-        deliveryFee,
-        shopOrders,
-        razorpayOrderId: razorOrder.id,
-        payment: false,
+      await runWithTransaction(async (session) => {
+        const orderData = {
+          user: req.userId,
+          address,
+          paymentMethod,
+          totalAmount,
+          deliveryFee,
+          shopOrders,
+          razorpayOrderId: razorOrder.id,
+          payment: false,
+        };
+        const created = session
+          ? await Order.create([orderData], { session })
+          : [await Order.create(orderData)];
+        newOrder = created[0];
       });
 
       return res.status(200).json({
@@ -110,20 +119,36 @@ export const placeOrder = async (req, res) => {
       });
     }
 
-    // COD Order
-    let newOrder = await Order.create({
-      user: req.userId,
-      address,
-      paymentMethod,
-      totalAmount,
-      deliveryFee,
-      shopOrders,
-      payment: false,
-    });
+    // COD Order (Atomic order creation + user order list update)
+    await runWithTransaction(async (session) => {
+      const orderData = {
+        user: req.userId,
+        address,
+        paymentMethod,
+        totalAmount,
+        deliveryFee,
+        shopOrders,
+        payment: false,
+      };
+      const created = session
+        ? await Order.create([orderData], { session })
+        : [await Order.create(orderData)];
+      newOrder = created[0];
 
-    const user = await User.findById(req.userId);
-    user.orders.push(newOrder._id);
-    await user.save();
+      if (session) {
+        await User.findByIdAndUpdate(
+          req.userId,
+          { $push: { orders: newOrder._id } },
+          { session }
+        );
+      } else {
+        const user = await User.findById(req.userId);
+        if (user) {
+          user.orders.push(newOrder._id);
+          await user.save();
+        }
+      }
+    });
 
     // Fetch fully populated order for socket emission and emails
     // Fetch fully populated order for socket emission
@@ -230,19 +255,29 @@ export const verifyRazorpay = async (req, res) => {
       return res.status(400).json({ success: false, message: "Payment already used for another order" });
     }
 
-    order.payment = true;
-    order.razorpayPaymentId = razorpay_payment_id;
-    order.shopOrders.forEach(shopOrder => {
-      shopOrder.status = "pending";
-    });
-    await order.save();
+    await runWithTransaction(async (session) => {
+      order.payment = true;
+      order.razorpayPaymentId = razorpay_payment_id;
+      order.shopOrders.forEach(shopOrder => {
+        shopOrder.status = "pending";
+      });
 
-    // Add order to user's orders array
-    const user = await User.findById(order.user);
-    if (user && !user.orders.includes(order._id)) {
-      user.orders.push(order._id);
-      await user.save();
-    }
+      if (session) {
+        await order.save({ session });
+        await User.findByIdAndUpdate(
+          order.user,
+          { $addToSet: { orders: order._id } },
+          { session }
+        );
+      } else {
+        await order.save();
+        const user = await User.findById(order.user);
+        if (user && !user.orders.includes(order._id)) {
+          user.orders.push(order._id);
+          await user.save();
+        }
+      }
+    });
 
     // Fetch fully populated order for socket emission and emails
     const io = req.app.get("io");

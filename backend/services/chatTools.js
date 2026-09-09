@@ -1,6 +1,7 @@
 import Item from "../models/item.model.js";
 import Shop from "../models/shop.model.js";
 import Order from "../models/order.model.js";
+import { semanticSearchItems } from "./embedding.service.js";
 
 // Function declarations handed to Gemini's function-calling API. Each name
 // here must have a matching entry in TOOL_EXECUTORS below.
@@ -108,6 +109,35 @@ async function compareItemPrices({ itemName, city }) {
 
 async function searchMenuItems({ query, city, maxPrice, type }) {
   if (!city) return { error: "city is required" };
+
+  // Use semantic RAG vector search for descriptive/natural language queries
+  if (query && query.trim()) {
+    try {
+      const semanticRes = await semanticSearchItems({
+        query,
+        city,
+        maxPrice,
+        type,
+        limit: 15,
+      });
+      if (semanticRes.results && semanticRes.results.length > 0) {
+        return {
+          results: semanticRes.results.map((i) => ({
+            itemName: i.name,
+            shopName: i.shopName,
+            price: i.price,
+            rating: i.rating,
+            type: i.type,
+            category: i.category,
+            similarityScore: i.similarityScore,
+          })),
+          searchMode: semanticRes.source,
+        };
+      }
+    } catch (err) {
+      // Fallback to regex filter on error
+    }
+  }
 
   const shops = await Shop.find({ city: cityRegex(city) }).select("_id name").lean();
   if (!shops.length) return { results: [], message: `No shops found in ${city}` };

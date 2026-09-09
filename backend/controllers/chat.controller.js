@@ -180,25 +180,170 @@ export const sendMessage = async (req, res) => {
 };
 
 /**
- * Get a response from the DB-grounded agent. Unlike a plain prompt, this
- * gives Gemini a set of tools (see services/chatTools.js) backed by real
- * Mongoose queries — price comparisons, menu search, and the caller's own
- * order status/history — so answers are grounded in live data instead of
- * the model inventing prices or restaurant names.
- *
- * `context.userId` is the server-verified identity from the auth cookie
- * (never a client-supplied value) and is the only thing that scopes the
- * order-related tools to the caller's own data.
+ * Tool friendly status message helper for UI streaming updates
  */
-async function getAgentResponse(userMessage, conversationHistory, context) {
+const getToolStatusLabel = (name, args) => {
+  switch (name) {
+    case "compareItemPrices":
+      return `🏷️ Comparing prices for "${args?.itemName || "dish"}" in ${args?.city || "your city"}...`;
+    case "searchMenuItems":
+      return `🔍 Searching menu items matching "${args?.query || "options"}"...`;
+    case "getShopsInCity":
+      return `🏬 Discovering restaurants in ${args?.city || "your city"}...`;
+    case "getOrderStatus":
+      return `📦 Checking live order status...`;
+    case "getOrderHistory":
+      return `📜 Retrieving your recent order history...`;
+    default:
+      return `⚡ Querying live restaurant database...`;
+  }
+};
+
+/**
+ * Send message with real-time SSE token streaming
+ * POST /api/chat/stream
+ */
+export const sendMessageStream = async (req, res) => {
+  // Setup SSE Headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const sendSSE = (data) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  try {
+    const { sessionId, userMessage, userRole, currentPage } = req.body;
+
+    if (!sessionId || !userMessage) {
+      sendSSE({ type: 'error', message: 'sessionId and userMessage are required' });
+      return res.end();
+    }
+
+    let chatSession = await ChatMessage.findOne({ sessionId });
+    const verifiedUserId = req.userId || null;
+
+    if (chatSession && chatSession.userId && chatSession.userId !== verifiedUserId) {
+      sendSSE({ type: 'error', message: 'Not authorized for this chat session' });
+      return res.end();
+    }
+
+    if (!chatSession) {
+      chatSession = new ChatMessage({
+        sessionId,
+        userId: verifiedUserId,
+        metadata: {
+          userAgent: req.headers['user-agent'],
+          ipAddress: req.ip,
+          context: {
+            userRole,
+            currentPage,
+          },
+        },
+        messages: [],
+      });
+    }
+
+    // Add user message
+    chatSession.messages.push({
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date(),
+    });
+
+    chatSession.metadata.context.userRole = userRole || chatSession.metadata.context.userRole;
+    chatSession.metadata.context.currentPage = currentPage || chatSession.metadata.context.currentPage;
+    chatSession.lastInteraction = new Date();
+
+    // Step 1: Rule-based FAQ match
+    const ruleResponse = findRuleBasedResponse(userMessage);
+
+    if (ruleResponse) {
+      const responseText = ruleResponse.response;
+      sendSSE({ type: 'status', message: '⚡ Knowledge base match' });
+
+      // Stream tokens in words with natural pacing
+      const words = responseText.split(' ');
+      for (const word of words) {
+        sendSSE({ type: 'token', token: word + ' ' });
+        await new Promise((r) => setTimeout(r, 15));
+      }
+
+      chatSession.messages.push({
+        role: 'bot',
+        content: responseText,
+        timestamp: new Date(),
+      });
+      await chatSession.save();
+
+      sendSSE({
+        type: 'done',
+        fullMessage: responseText,
+        source: ruleResponse.source || 'rule-based',
+        sessionId,
+      });
+      return res.end();
+    }
+
+    // Step 2: Agent execution with tool streaming
+    sendSSE({ type: 'status', message: '🤖 Thinking and consulting live data...' });
+
+    const agentResult = await getAgentResponseStreaming(
+      userMessage,
+      chatSession.messages,
+      { userId: verifiedUserId },
+      sendSSE
+    );
+
+    let finalBotMessage = agentResult?.text;
+    let source = 'ai';
+
+    if (!finalBotMessage) {
+      const fallback = generateFallbackResponse();
+      finalBotMessage = fallback.response;
+      source = fallback.source;
+      sendSSE({ type: 'token', token: finalBotMessage });
+    }
+
+    // Save final bot response
+    chatSession.messages.push({
+      role: 'bot',
+      content: finalBotMessage,
+      timestamp: new Date(),
+    });
+    await chatSession.save();
+
+    sendSSE({
+      type: 'done',
+      fullMessage: finalBotMessage,
+      source,
+      sessionId,
+    });
+    return res.end();
+  } catch (error) {
+    console.error('Error in sendMessageStream:', error);
+    sendSSE({
+      type: 'error',
+      message: 'Something went wrong while processing your request.',
+    });
+    return res.end();
+  }
+};
+
+/**
+ * Streaming Agent loop that emits status and token events as they occur
+ */
+async function getAgentResponseStreaming(userMessage, conversationHistory, context, sendSSE) {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   if (!GEMINI_API_KEY) {
-    console.error('GEMINI_API_KEY is not configured');
     return null;
   }
 
-  // Prior turns for context, excluding the current user message (already
-  // pushed onto chatSession.messages by the caller before we're invoked).
   const priorMessages = conversationHistory.slice(0, -1).slice(-10);
   const contents = priorMessages.map((msg) => ({
     role: msg.role === 'bot' ? 'model' : 'user',
@@ -218,51 +363,53 @@ async function getAgentResponse(userMessage, conversationHistory, context) {
       }),
     });
     const data = await response.json();
-    if (!response.ok) {
-      console.error('Gemini API error:', data);
-      return null;
-    }
+    if (!response.ok) return null;
     return data;
   };
 
   try {
-    // Bounded loop: a turn can chain a few tool calls (e.g. compare prices,
-    // then also check an order), but this must never run unbounded.
     const MAX_TOOL_ROUNDS = 4;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const data = await callGemini();
       if (!data) return null;
 
       const parts = data.candidates?.[0]?.content?.parts;
-      if (!parts || !parts.length) {
-        console.warn('Unexpected Gemini response structure:', JSON.stringify(data).substring(0, 200));
-        return null;
-      }
+      if (!parts || !parts.length) return null;
 
       const functionCallParts = parts.filter((p) => p.functionCall);
       if (functionCallParts.length === 0) {
         const textPart = parts.find((p) => p.text);
-        return textPart?.text || null;
+        const fullText = textPart?.text || '';
+
+        // Stream final generated text in chunks
+        const chunks = fullText.split(' ');
+        for (const chunk of chunks) {
+          sendSSE({ type: 'token', token: chunk + ' ' });
+          await new Promise((r) => setTimeout(r, 12));
+        }
+
+        return { text: fullText };
       }
 
-      // Echo the model's exact turn back (including thoughtSignature) — the
-      // API requires this to accept the follow-up function response.
       contents.push({ role: 'model', parts });
 
       const responseParts = [];
       for (const part of functionCallParts) {
         const { name, args } = part.functionCall;
-        console.log(`[CHAT] Tool call: ${name}`, args);
+        const statusLabel = getToolStatusLabel(name, args);
+        sendSSE({ type: 'tool_start', tool: name, message: statusLabel });
+
         const result = await runTool(name, args, context);
+        sendSSE({ type: 'tool_end', tool: name });
+
         responseParts.push({ functionResponse: { name, response: result } });
       }
       contents.push({ role: 'user', parts: responseParts });
     }
 
-    console.warn('[CHAT] Max tool-call rounds reached without a final answer');
     return null;
   } catch (error) {
-    console.error('Error calling Gemini API:', error.message);
+    console.error('Error in agent streaming:', error.message);
     return null;
   }
 }
