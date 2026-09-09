@@ -32,21 +32,6 @@ Vingo is an enterprise-grade food delivery and social commerce platform architec
 
 ---
 
-## 📸 Application Screenshots & UI Preview
-
-<p align="center">
-  <img src="docs/screenshots/home.png" alt="Vingo Home Feed & Food Discovery" width="850" />
-</p>
-
-### 📱 Multi-Role Interfaces & Operations
-
-| 🏬 Restaurant Owner Dashboard | 🛵 Delivery Partner Hub |
-| :---: | :---: |
-| <img src="docs/screenshots/shop.png" alt="Owner Dashboard & Shop Management" width="420" /> | <img src="docs/screenshots/delivery.png" alt="Delivery Partner & Order Tracking" width="420" /> |
-| *Shop Management, Menu Items & Order Processing* | *Delivery Dispatch, Active Routes & Delivery Stats* |
-
----
-
 ## 🏗️ System Architecture
 
 ```mermaid
