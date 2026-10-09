@@ -22,7 +22,7 @@ export function initWebVitals() {
       }
     });
     lcpObserver.observe({ type: "largest-contentful-paint", buffered: true });
-  } catch (e) {
+  } catch {
     // Unsupported in older browsers
   }
 
@@ -41,7 +41,7 @@ export function initWebVitals() {
       }
     });
     clsObserver.observe({ type: "layout-shift", buffered: true });
-  } catch (e) {
+  } catch {
     // Unsupported
   }
 
@@ -58,7 +58,7 @@ export function initWebVitals() {
       }
     });
     fidObserver.observe({ type: "first-input", buffered: true });
-  } catch (e) {
+  } catch {
     // Unsupported
   }
 }
